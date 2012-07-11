@@ -1,0 +1,6 @@
+name = "File Checker"
+description = "Verifies the physical existence of files as stored in the files table."
+core = 6.x
+package = "File Management"
+version = "6.x-1.x-dev"
+project = "file_checker"
