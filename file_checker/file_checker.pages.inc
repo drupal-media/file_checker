@@ -33,7 +33,7 @@ function file_checker_admin_settings($form_state) {
     '#title' => t('Process manually'),
   );
   
-  $total = db_result(db_query(db_rewrite_sql(file_checker_build_count_query()))); // total number of files
+  $total = db_result(db_query(db_rewrite_sql(file_checker_build_count_query(), 'files'))); // total number of files
   $total_files = t('There are currently @total files.', array('@total' => $total));
   if (!variable_get('file_checker_last_run', 0)) {
     $form['file_checker_process_manually']['#value'] = $total_files . ' ' . t('File verification has never been run.');

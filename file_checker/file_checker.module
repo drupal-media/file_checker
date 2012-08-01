@@ -18,7 +18,7 @@ define('FILE_STATUS_MISSING', 2);
  */
 function file_checker_process_verification($process = TRUE) {
   // calculate number of files
-  $total = db_result(db_query(db_rewrite_sql(file_checker_build_count_query())));
+  $total = db_result(db_query(db_rewrite_sql(file_checker_build_count_query(), 'files')));
   // split processing into junks
   $batch_size = variable_get('file_checker_process_batch_size', 10000);
   $operations = array();
@@ -57,7 +57,7 @@ function file_checker_process_verification($process = TRUE) {
 function file_checker_verify_range($from, $count, $total, &$context) {
   // build base query and iterate over all files
   $sql = file_checker_build_select_query();
-  $result = db_query_range(db_rewrite_sql($sql), $from, $count);  
+  $result = db_query_range(db_rewrite_sql($sql, 'files', 'fid'), $from, $count);
   
   while ($file = db_fetch_object($result)) {
     file_checker_verify($file);  
