@@ -5,8 +5,8 @@
  */
 
 /**
- * Implementation of hook_views_handlers().
- * 
+ * Implements hook_views_handlers().
+ *
  * Register custom handlers for file status.
  * @return
  *   array of views handlers
@@ -26,14 +26,14 @@ function file_checker_views_handlers() {
 }
 
 /**
- * Implementation of hook_views_data_filter().
- * 
+ * Implements hook_views_data_filter().
+ *
  * Override file status handlers for filter and field by custom ones.
- * 
+ *
  * @param $data
  *   array of views data
  */
-function file_checker_views_data_alter(&$data) {  
+function file_checker_views_data_alter(&$data) {
   $data['files']['status'] = array(
     'title' => t('Status'),
     'help' => t('The status of the file.'),

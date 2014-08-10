@@ -1,6 +1,12 @@
 name = "File Checker"
 description = "Verifies the physical existence of files as stored in the files table."
-core = 6.x
+core = 7.x
 package = "File Management"
-version = "6.x-1.x-dev"
+version = "7.x-1.x-dev"
 project = "file_checker"
+dependencies[] = "file"
+dependencies[] = "views"
+configure = "admin/config/system/file_checker"
+files[] = file_checker_field_file_status.inc
+files[] = file_checker_filter_file_status.inc
+

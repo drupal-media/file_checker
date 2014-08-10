@@ -10,14 +10,16 @@
  * @return
  *   form array
  */
-function file_checker_admin_settings($form_state) {
-  $form = array();
-   
+function file_checker_admin_settings($form, $form_state) {
+
   $form['file_checker_process_on_cron'] = array(
     '#type' => 'radios',
     '#title' => t('Process on cron'),
     '#default_value' => variable_get('file_checker_process_on_cron', 0),
-    '#options' => array(0 => t('Disabled'), 1 => t('Enabled')),
+    '#options' => array(
+      0 => t('Disabled'),
+      1 => t('Enabled'),
+    ),
     '#description' => t('Do automatic file checking on each cron run. Enable this option only on small sites with a few files.<br/>You can process the file checking manually below or run the drush command "drush file-checker-run"'),
   );
 
@@ -25,31 +27,31 @@ function file_checker_admin_settings($form_state) {
     '#type' => 'textfield',
     '#title' => t('Process batch size'),
     '#default_value' => variable_get('file_checker_process_batch_size', 10000),
-    '#description' => t('Process file checking in junks instead of one by one preventing timeouts, memory outages etc.<br/>A higher values usually results in better performance whereas a lower value increases percentage bar accuracy.'), 
+    '#description' => t('Process file checking in junks instead of one by one preventing timeouts, memory outages etc.<br/>A higher values usually results in better performance whereas a lower value increases percentage bar accuracy.'),
   );
-  
+
   $form['file_checker_process_manually'] = array(
     '#type' => 'item',
     '#title' => t('Process manually'),
   );
-  
-  $total = db_result(db_query(db_rewrite_sql(file_checker_build_count_query(), 'files'))); // total number of files
+
+  $total = db_query('SELECT count(*) FROM {file_usage}')->fetchField();
   $total_files = t('There are currently @total files.', array('@total' => $total));
   if (!variable_get('file_checker_last_run', 0)) {
     $form['file_checker_process_manually']['#value'] = $total_files . ' ' . t('File verification has never been run.');
   }
-  else { 
-    $form['file_checker_process_manually']['#value'] = $total_files . ' ' . t('File verification has been last run on @time', array('@time' => format_date(variable_get('file_checker_last_run', 0), 'small')));
+  else {
+    $form['file_checker_process_manually']['#value'] = $total_files . ' ' . t('File verification has been last run on @time', array('@time' => format_date(variable_get('file_checker_last_run', 0), 'short')));
   }
-  
+
   $form['file_checker_process_manually_run'] = array(
     '#type' => 'submit',
     '#value' => t('Flag missing files'),
     '#suffix' => '<br/><br/>',
   );
-  
+
   $form['#submit'][] = 'file_checker_admin_settings_submit';
-  
+
   return system_settings_form($form);
 }
 
@@ -69,74 +71,156 @@ function file_checker_admin_settings_submit($form, $form_state) {
 
 /**
  * File overview page list all files including some filters and sorting.
+ * See dblog.admin.inc dblog_overview() for an example.
  */
 function file_checker_overview() {
+  $rows = array();
   
-  $output = drupal_get_form('file_checker_form_overview'); // filter form
+  // filter form
+  $build['file_checker_filter_form'] = drupal_get_form('file_checker_filter_form');
 
   // define table headers here
   $header = array(
-    array('data' => t('File ID'), 'field' => 'f.fid'),
-    array('data' => t('File name'), 'field' => 'f.filename'),
-    array('data' => t('File path'), 'field' => 'f.filepath'),
-    array('data' => t('File Mime'), 'field' => 'f.filemime'),
-    array('data' => t('File size'), 'field' => 'f.filesize'),
-    array('data' => t('Timestamp'), 'field' => 'f.timestamp', 'sort' => 'desc'),
-    array('data' => t('User'), 'field' => 'f.uid'),
-    array('data' => t('Status'), 'field' => 'f.status'),
+    array(
+      'data' => t('File ID'),
+      'field' => 'f.fid',
+    ),
+    array(
+      'data' => t('File name'),
+      'field' => 'f.filename',
+    ),
+    array(
+      'data' => t('File path'),
+      'field' => 'f.uri',
+    ),
+    array(
+      'data' => t('File Mime'),
+      'field' => 'f.filemime',
+    ),
+    array(
+      'data' => t('File size'),
+      'field' => 'f.filesize',
+    ),
+    array(
+      'data' => t('Timestamp'),
+      'field' => 'f.timestamp',
+      'sort' => 'desc',
+    ),
+    array(
+      'data' => t('User'),
+      'field' => 'f.uid',
+    ),
+    array(
+      'data' => t('Status'),
+      'field' => 'f.status',
+    ),
+    array(
+      'data' => t('Type'),
+      'field' => 'f.type',
+    ),
+    array(
+      'data' => t('Where Used'),
+      'field' => 'u.type'.'u.id',
+    ),
   );
-  
-  $tablesort = tablesort_sql($header); // generate sort sql query snippet
+  $select = db_select('file_managed', 'f')
+    ->extend('TableSort')
+    ->extend('PagerDefault');
+  $select->join('file_usage', 'u', 'f.fid = u.fid');
+  $select->addField('u', 'type', 'used_type');
+  $select->addField('u', 'id', 'used_type_id');
+  $select->fields('f');
+  $results = $select;
 
-  list($sql, $args) = _file_checker_build_overview_query(); // build base query plus arguments
-  
-  $result = pager_query($sql . $tablesort, 50, 0, NULL, $args);
+  // apply filters
+  $filters = $build['file_checker_filter_form']['filters'];
+  if (!empty($filters['filter_filename']['#value'])) {
+    $results = $results
+      ->condition('f.status', $filters['filter_filename']['#value'], 'LIKE');
+  }
+  if (!empty($filters['filter_filemime']['#value'])) {
+    $results = $results
+      ->condition('f.filemime', $filters['filter_filemime']['#value']);
+  }
+  if (isset($_SESSION['file_checker_overview_filter_status'])) {
+    $results = $results
+      ->condition('f.status', $_SESSION['file_checker_overview_filter_status'], '>=');
+  }
+  if (!empty($filters['filter_uid']['#value'])) {
+    $results = $results
+      ->condition('f.uid', $filters['filter_uid']['#value'], 'IN');
+  }
 
-  while ($file = db_fetch_object($result)) {
-    $rows[] = array('data' =>
-      array(
+  $results = $results
+    ->limit(100)
+    ->orderByHeader($header)
+    ->execute();
+  foreach ($results as $file) {
+    $used_path = $file->used_type .'/'. $file->used_type_id;
+    $rows[] = array(
+      'data' => array(
         $file->fid,
         $file->filename,
-        $file->filepath,
+        $file->uri,
         $file->filemime,
         $file->filesize,
-        format_date($file->timestamp, 'small'),
+        format_date($file->timestamp, 'short'),
         l(user_load($file->uid)->name, 'user/' . $file->uid),
         $file->status,
-      )
-    );   
+        $file->type,
+        l($used_path, $used_path),
+      ),
+    );
   }
 
-  if (!$rows) {
-    $rows[] = array(array('data' => t('No files available.'), 'colspan' => 8));
-  }
+  $build['file_checker_table'] = array(
+    '#theme' => 'table',
+    '#header' => $header,
+    '#rows' => $rows,
+    '#empty' => t('No files available.'),
+  );
+  $build['file_checker_pager'] = array('#theme' => 'pager');
 
-  $output .= theme('table', $header, $rows);
-  $output .= theme('pager', NULL, 50, 0);
-
-  return $output;
+  return $build;
 }
 
 /**
  * Filter form for overview page.
  * TODO: Use advanced filtering as in user_filter_form() and theme_user_filters().
- * 
+ *
  * @param $form_state
  *   array of form values
- * @return 
+ * @return
  *   form array
  */
-function file_checker_form_overview($form_state) {
+function file_checker_filter_form($form, $form_state) {
 
+  $filter_filename = 
+    isset($_SESSION['file_checker_overview_filter_filename']) ?
+    $_SESSION['file_checker_overview_filter_filename'] : '';
+  $filter_filemime =
+    isset($_SESSION['file_checker_overview_filter_filemime']) ?
+    $_SESSION['file_checker_overview_filter_filemime'] : '';
+  $filter_uid =
+    isset($_SESSION['file_checker_overview_filter_uid']) ?
+    $_SESSION['file_checker_overview_filter_uid'] : NULL;
+  $filter_status =
+    isset($_SESSION['file_checker_overview_filter_status']) ?
+    $_SESSION['file_checker_overview_filter_status'] : 2;
+    
+  $expand = !empty($filter_filename) || !empty($filter_filemime) || !empty($filter_uid) || $filter_status != 2;
+    
   $form['filters'] = array(
     '#type' => 'fieldset',
     '#title' => t('Show only items where'),
+    '#collapsible' => TRUE,
+    '#collapsed' => !$expand,
   );
 
   $form['filters']['filter_filename'] = array(
     '#type' => 'textfield',
     '#title' => t('File name'),
-    '#default_value' => $_SESSION['file_checker_overview_filter_filename']
+    '#default_value' => $filter_filename,
   );
 
   $names[''] = t('All mime types');
@@ -147,23 +231,37 @@ function file_checker_form_overview($form_state) {
     '#type' => 'select',
     '#title' => t('File Mime type'),
     '#options' => $names,
-    '#default_value' => $_SESSION['file_checker_overview_filter_filemime'] ? $_SESSION['file_checker_overview_filter_filemime'] : '',
+    '#default_value' => $filter_filemime,
   );
   $form['filters']['filter_uid'] = array(
     '#type' => 'textfield',
     '#title' => t('User Id'),
-    '#default_value' => $_SESSION['file_checker_overview_filter_uid']
+    '#default_value' => $filter_uid,
   );
   $form['filters']['filter_status'] = array(
     '#type' => 'select',
     '#title' => t('File status'),
-    '#options' => array('' => t('Any'), 0 => t('Temporary'), 1 => t('Permanent'), 2 => t('Missing')),
-    '#default_value' => $_SESSION['file_checker_overview_filter_status'] ? $_SESSION['file_checker_overview_filter_status'] : 2,
+    '#options' => array(
+      '' => t('Any'),
+      0 => t('Temporary'),
+      1 => t('Permanent'),
+      2 => t('Missing'),
+    ),
+    '#default_value' => $filter_status,
   );
 
-  $form['submit'] = array('#type' => 'submit', '#value' => t('Filter'));
-  $form['buttons']['reset'] = array('#type' => 'submit', '#value' => t('Reset'));
-  $form['#redirect'] = FALSE;
+  $form['filters']['actions'] = array(
+    '#type' => 'actions',
+    '#attributes' => array('class' => array('container-inline')),
+  );
+  $form['filters']['actions'] = array(
+    '#type' => 'submit',
+    '#value' => t('Filter'),
+  );
+  $form['filters']['actions']['reset'] = array(
+    '#type' => 'submit',
+    '#value' => t('Reset'),
+  );
 
   return $form;
 }
@@ -175,12 +273,13 @@ function file_checker_form_overview($form_state) {
  * @param $form_state
  *   form values
  */
-function file_checker_form_overview_submit($form, &$form_state) {
-  switch ($form_state['values']['op']) {
+function file_checker_filter_form_submit($form, &$form_state) {
+  $op = $form_state['values']['op'];
+  switch ($op) {
     case t('Reset'): // reset form
       foreach ($form_state['values'] as $form_value_id => $form_value) {
         if (strpos($form_value_id, 'filter_') === 0) {
-          unset($_SESSION["file_checker_overview_$form_value_id"]);
+          unset($_SESSION['file_checker_overview_$form_value_id']);
         }
       }
       break;
@@ -188,51 +287,29 @@ function file_checker_form_overview_submit($form, &$form_state) {
       foreach ($form_state['values'] as $form_value_id => $form_value) {
         if (strpos($form_value_id, 'filter_') === 0) {
           if ($form_value) {
-            $_SESSION["file_checker_overview_$form_value_id"] = $form_value;
+            $_SESSION['file_checker_overview_'.$form_value_id] = $form_value;
           }
           else {
-            unset($_SESSION["file_checker_overview_$form_value_id"]);
+            unset($_SESSION['file_checker_overview_'.$form_value_id]);
           }
         }
       }
       break;
   }
-
+  return 'admin/reports/file_checker';
 }
 
 /**
  * Get a list of file mime types.
- * 
+ *
  * @return
  *   array of file mime types
  */
 function _file_checker_get_file_mime_types() {
   $types = array();
-  $result = db_query('SELECT DISTINCT(filemime) FROM {files} ORDER BY filemime');
-  while ($object = db_fetch_object($result)) {
+  $result = db_query('SELECT DISTINCT(filemime) FROM {file_managed} ORDER BY filemime');
+  foreach ($result as $object) {
     $types[] = $object->filemime;
   }
   return $types;
-}
-
-/**
- * Build the query for the overview pages considering filters.
- * 
- * @return
- *   array containing SQL statement string and query arguments array
- */
-function _file_checker_build_overview_query() {
-  $cols = array_keys(file_checker_get_db_table_file_cols());
-  $wheres = array();
-  $args = array();
-  // filters are stored in $_SESSION, build the where SQL snippets from it
-  foreach ($cols as $col) {
-    $filter = 'file_checker_overview_filter' . "_$col";
-    if (isset($_SESSION[$filter])) {            
-      $wheres[] = $col;
-      $args[] = $_SESSION[$filter];
-    }
-  }
-  $sql = file_checker_build_select_query($wheres);
-  return array($sql, $args);
 }

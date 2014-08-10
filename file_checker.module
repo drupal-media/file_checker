@@ -5,26 +5,28 @@
  * There we flag missing physical files with a new file status FILE_STATUS_MISSING.
  */
 
-// Additional file status flag, complementing FILE_STATUS_TEMPORARY and FILE_STATUS_PERMANENT
+// Additional file status flag, complementing ~FILE_STATUS_PERMANENT and FILE_STATUS_PERMANENT
 define('FILE_STATUS_MISSING', 2);
 
+include_once('file_checker.pages.inc');
+include_once('file_checker.views.inc');
 
 /**
  * Verify all files in the files table and check their representation on the file system.
  * Therefore we create a batch job and separate the whole set into separate junks.
  * @param $process
  *   boolean whether to process the batch immediately, not needed of being set as
- *   on form submission a batch will be triggered automatically  
+ *   on form submission a batch will be triggered automatically
  */
 function file_checker_process_verification($process = TRUE) {
   // calculate number of files
-  $total = db_result(db_query(db_rewrite_sql(file_checker_build_count_query(), 'files')));
+  $total = file_checker_get_count();
   // split processing into junks
   $batch_size = variable_get('file_checker_process_batch_size', 10000);
   $operations = array();
-  for ($i = 0; $i < $total; $i+=$batch_size) {
+  for ($i = 0; $i < $total; $i += $batch_size) {
     // the last op will be smaller, don't exceed total size
-    $count = ($total > ($i+$batch_size)) ? $batch_size : ($total - $i);
+    $count = ($total > ($i + $batch_size)) ? $batch_size : ($total - $i);
     $operations[] = array('file_checker_verify_range', array($i, $count, $total));
   }
   // Set batch processor
@@ -36,11 +38,11 @@ function file_checker_process_verification($process = TRUE) {
     'progress_message' => NULL, // suppress here, message to be set in operation function
     'error_message' => t('File Checker has encountered an error.'),
     'progressive' => FALSE,
-  ); 
+  );
   batch_set($batch); // no need to call
   if ($process) {
     batch_process();
-  }  
+  }
 }
 
 /**
@@ -55,38 +57,58 @@ function file_checker_process_verification($process = TRUE) {
  *   batch callback context information
  */
 function file_checker_verify_range($from, $count, $total, &$context) {
-  // build base query and iterate over all files
-  $sql = file_checker_build_select_query();
-  $result = db_query_range(db_rewrite_sql($sql, 'files', 'fid'), $from, $count);
-  
-  while ($file = db_fetch_object($result)) {
-    file_checker_verify($file);  
+  //$result = db_query("SELECT * FROM {file_usage} WHERE count>0");
+  $result = db_select('file_usage', 'f')
+    ->fields('f')
+    ->condition('count', 0, '>')
+    ->range($from, $count)
+    ->execute();
+dvm('checking records ' . ($from+1) . '-'.($from+$count). '. Found ' . count($result) . ' records.');
+  foreach ($result as $data) {
+    // Temporary files (those marked with status = 0) older than the maximum temp age
+    // were, or will be, removed during a cron run.
+    $files = db_select('file_managed', 'f')
+      ->fields('f')
+      ->condition('fid', $data->fid)
+      //->condition('filesize', 0, '>')
+      ->condition('status', 0, '>')
+      ->execute();
+    foreach ($files as $file) {
+      file_checker_verify($file);
+      break; // only need to check one, more would be redundant
+    }
   }
   // correct status message here, as we process in larger junks
-  $context['message'] = t('Processed @current out of @total.', array('@current' => ($from+$count), '@total' => $total));
+  $context['message'] = t('Processed @current out of @total.', array('@current' => ($from + $count), '@total' => $total));
 }
 
 /**
  * Check if a file contained in the files table physically exists on the file system.
- * If a file cannot be accessed, we flag the file as missed, i. e. FILE_STATUS_MISSING. 
+ * If a file cannot be accessed, we flag the file as missed, i. e. FILE_STATUS_MISSING.
  * @param $file
  *   file object
- */  
+ */
 function file_checker_verify($file) {
-  $path = file_create_path($file->filepath); // determine file path
+  // determine file path
+  //$path = file_create_path($file->filepath); // determine file path
+  $path = file_stream_wrapper_uri_normalize($file->uri);
   // check if file can be accessed
   if (!file_exists($path) || !is_readable($path) || !is_writable($path)) {
-    file_set_status($file, FILE_STATUS_MISSING);
+    $file->status |= FILE_STATUS_MISSING;
+    $file = file_save($file);
+//dvm('flag as missing: (' .$file->status. ') ' . $path);
   }
   // if files are falsely marked as missing, revert the status back
-  elseif ($file->status == FILE_STATUS_MISSING) {
-    file_set_status($file, FILE_STATUS_PERMANENT);
+  elseif (($file->status & FILE_STATUS_MISSING) == FILE_STATUS_MISSING) {
+    $file->status &= ~FILE_STATUS_MISSING;
+    $file = file_save($file);
+//dvm('falsely marked as missing: ('. $file->fid . ','. $file->status. ') ' . $path);
   }
 }
 
 /**
- * Implementation of hook_cron()
- * 
+ * Implements hook_cron()
+ *
  * Process the file system checking on cron if demanded. This should only be used on small sites if at all.
  */
 function file_checker_cron() {
@@ -106,7 +128,7 @@ function file_checker_cron() {
  */
 function file_checker_verify_finish($success, $results, $operations) {
   if ($success) {
-    variable_set('file_checker_last_run', time());
+    variable_set('file_checker_last_run', REQUEST_TIME);
     drupal_set_message(t('File verification has been completed.'));
     watchdog('file_checker', t('File verification has been completed.'));
   }
@@ -122,71 +144,61 @@ function file_checker_verify_finish($success, $results, $operations) {
 }
 
 /**
- * Implementation of hook_menu().
- * 
+ * Implements hook_menu().
+ *
  * @return
  *   array of menu items
  */
-function file_checker_menu() {  
-  $items['admin/settings/file_checker'] = array(
-    'title' => t('File Checker'),
+function file_checker_menu() {
+  $items['admin/config/system/file_checker'] = array(
+    'title' => 'File Checker',
     'description' => t('Show missing physical files.'),
     'page callback' => 'drupal_get_form',
     'page arguments' => array('file_checker_admin_settings'),
-    'access arguments'  => array('administer file checker'),
+    'access callback' => 'file_checker_access',
     'type' => MENU_NORMAL_ITEM,
     'file' => 'file_checker.pages.inc',
   );
-  
+
   $items['admin/reports/file_checker'] = array(
-    'title' => t('File list'),
+    'title' => 'File list',
     'description' => t('Show missing physical files.'),
     'page callback' => 'file_checker_overview',
-    'access arguments'  => array('access file checker'),
+    //'page callback' => 'file_checker_form_overview',
+    //'page callback' => 'drupal_get_form',
+    //'page arguments' => array('file_checker_overview'),
+    'access callback' => 'file_checker_access',
     'type' => MENU_NORMAL_ITEM,
     'file' => 'file_checker.pages.inc',
-  );  
+  );
   return $items;
 }
 
+function file_checker_access() {
+  return user_access('access file checker') ;
+}
+
 /**
- * Implementation of hook_views_api().
+ * Implements hook_permission().
+ * @return multitype:number
+ */
+function file_checker_permission() {
+  return array(
+    'access file checker' => array(
+      'title' => t('Access file checker'),
+      'description' => t('Allow users to access the file checker'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_views_api().
  * @return multitype:number
  */
 function file_checker_views_api() {
   return array(
-      'api' => 2,
+    'api' => 2,
   );
-}
-
-/**
- * Build a standard select query for files. Optionally narrow it by where arguments
- * @param $wheres
- *   associative array, key is db column, value is the actual value
- * @return string
- *   SQL select statement
- */
-function file_checker_build_select_query($wheres = array()) { 
-  $cols = file_checker_get_db_table_file_cols(); 
-  $sql = 'SELECT ' . implode(', ', array_keys($cols)) . ' FROM {files} f';  
-  if (!empty($wheres)) {
-    $sql_where = array();
-    foreach ($wheres as $where) {
-      switch ($cols[$where['col']]) {
-        case 'serial':
-        case 'int':
-          $placeholder = '%d';
-          break;
-        case 'varchar':
-        default:
-          $op = 'LIKE';
-          $placeholder = "'%%%s%'";
-      }
-      $sql_where[] = "$where $op $placeholder";
-    }
-    $sql .= " WHERE " . implode(' AND ', $sql_where);
-  } 
-  return $sql;
 }
 
 /**
@@ -194,14 +206,15 @@ function file_checker_build_select_query($wheres = array()) {
  * @return
  *   SQL statement string
  */
-function file_checker_build_count_query() {
-  return 'SELECT COUNT(*) as total FROM {files}';
+function file_checker_get_count() {
+  $total = db_query('SELECT count(*) FROM {file_usage} WHERE count>0')->fetchField();
+  return $total;
 }
 
 /**
  * Get a list of (relevant) db columuns in the files table. We could also call drupal_get_schema('files'),
  * but this is more efficient and we have the columns in the order we want them to have.
- * 
+ *
  * @return
  *  array of file table columns
  */
@@ -210,10 +223,11 @@ function file_checker_get_db_table_file_cols() {
     'fid' => array('type' => 'serial'),
     'timestamp' => array('type' => 'int'),
     'filename' => array('type' => 'varchar'),
-    'filepath' => array('type' => 'varchar'),
+    'uri' => array('type' => 'varchar'),
     'filemime' => array('type' => 'varchar'),
     'filesize' => array('type' => 'int'),
     'uid' => array('type' => 'int'),
     'status' => array('type' => 'int'),
-  ); 
+    'type' => array('type' => 'varchar'),
+  );
 }
