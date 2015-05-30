@@ -63,7 +63,7 @@ function file_checker_verify_range($from, $count, $total, &$context) {
     ->condition('count', 0, '>')
     ->range($from, $count)
     ->execute();
-dvm('checking records ' . ($from+1) . '-'.($from+$count). '. Found ' . count($result) . ' records.');
+
   foreach ($result as $data) {
     // Temporary files (those marked with status = 0) older than the maximum temp age
     // were, or will be, removed during a cron run.
@@ -96,13 +96,11 @@ function file_checker_verify($file) {
   if (!file_exists($path) || !is_readable($path) || !is_writable($path)) {
     $file->status |= FILE_STATUS_MISSING;
     $file = file_save($file);
-//dvm('flag as missing: (' .$file->status. ') ' . $path);
   }
   // if files are falsely marked as missing, revert the status back
   elseif (($file->status & FILE_STATUS_MISSING) == FILE_STATUS_MISSING) {
     $file->status &= ~FILE_STATUS_MISSING;
     $file = file_save($file);
-//dvm('falsely marked as missing: ('. $file->fid . ','. $file->status. ') ' . $path);
   }
 }
 
