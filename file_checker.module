@@ -159,12 +159,9 @@ function file_checker_menu() {
   );
 
   $items['admin/reports/file_checker'] = array(
-    'title' => 'File list',
+    'title' => 'Missing file list',
     'description' => t('Show missing physical files.'),
     'page callback' => 'file_checker_overview',
-    //'page callback' => 'file_checker_form_overview',
-    //'page callback' => 'drupal_get_form',
-    //'page arguments' => array('file_checker_overview'),
     'access callback' => 'file_checker_access',
     'type' => MENU_NORMAL_ITEM,
     'file' => 'file_checker.pages.inc',

@@ -116,11 +116,11 @@ function file_checker_overview() {
     ),
     array(
       'data' => t('Type'),
-      'field' => 'f.type',
+      'field' => 'u.type',
     ),
     array(
-      'data' => t('Where Used'),
-      'field' => 'u.type'.'u.id',
+      'data' => t('Used ID'),
+      'field' => 'u.id',
     ),
   );
   $select = db_select('file_managed', 'f')
@@ -156,7 +156,6 @@ function file_checker_overview() {
     ->orderByHeader($header)
     ->execute();
   foreach ($results as $file) {
-    $used_path = $file->used_type .'/'. $file->used_type_id;
     $rows[] = array(
       'data' => array(
         $file->fid,
@@ -166,9 +165,9 @@ function file_checker_overview() {
         $file->filesize,
         format_date($file->timestamp, 'short'),
         l(user_load($file->uid)->name, 'user/' . $file->uid),
-        $file->status,
-        $file->type,
-        l($used_path, $used_path),
+        $build['file_checker_filter_form']['filters']['filter_status']['#options'][$file->status],
+        $file->used_type,
+        $file->used_type_id,
       ),
     );
   }
@@ -186,7 +185,6 @@ function file_checker_overview() {
 
 /**
  * Filter form for overview page.
- * TODO: Use advanced filtering as in user_filter_form() and theme_user_filters().
  *
  * @param $form_state
  *   array of form values
