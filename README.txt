@@ -29,8 +29,3 @@ too many iterations, e. g. 100.000 files / 10.00 batch size = 10 runs sounds lik
 you can run the file verification manually.
 
 On admin/reports/file_checker you can view the results.
-
-TODOs
------
-- Drush command for file checking
-- Advanced overview filter form

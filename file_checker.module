@@ -18,11 +18,11 @@ include_once('file_checker.views.inc');
  *   boolean whether to process the batch immediately, not needed of being set as
  *   on form submission a batch will be triggered automatically
  */
-function file_checker_process_verification($process = TRUE) {
+function file_checker_process_verification($process = TRUE, $batch_size = NULL) {
   // calculate number of files
   $total = file_checker_get_count();
   // split processing into junks
-  $batch_size = variable_get('file_checker_process_batch_size', 10000);
+  $batch_size = isset($batch_size) ? $batch_size : variable_get('file_checker_process_batch_size', 10000);
   $operations = array();
   for ($i = 0; $i < $total; $i += $batch_size) {
     // the last op will be smaller, don't exceed total size
