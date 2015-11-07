@@ -144,7 +144,7 @@ function file_checker_overview() {
   }
   if (isset($_SESSION['file_checker_overview_filter_status'])) {
     $results = $results
-      ->condition('f.status', $_SESSION['file_checker_overview_filter_status'], '>=');
+      ->condition('f.status', $_SESSION['file_checker_overview_filter_status'], '=');
   }
   if (!empty($filters['filter_uid']['#value'])) {
     $results = $results
@@ -204,7 +204,7 @@ function file_checker_filter_form($form, $form_state) {
     $_SESSION['file_checker_overview_filter_uid'] : NULL;
   $filter_status =
     isset($_SESSION['file_checker_overview_filter_status']) ?
-    $_SESSION['file_checker_overview_filter_status'] : 2;
+    $_SESSION['file_checker_overview_filter_status'] : '';
     
   $expand = !empty($filter_filename) || !empty($filter_filemime) || !empty($filter_uid) || $filter_status != 2;
     
@@ -284,7 +284,7 @@ function file_checker_filter_form_submit($form, &$form_state) {
     case t('Filter'): // filter form
       foreach ($form_state['values'] as $form_value_id => $form_value) {
         if (strpos($form_value_id, 'filter_') === 0) {
-          if ($form_value) {
+          if (!empty($form_value) || $form_value === '0') {
             $_SESSION['file_checker_overview_'.$form_value_id] = $form_value;
           }
           else {
