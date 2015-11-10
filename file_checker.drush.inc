@@ -9,7 +9,7 @@
  */
 function file_checker_drush_command() {
   $items['file-checker-process'] = array(
-    'description' => t('Verify all files in the files table'),
+    'description' => 'Verify all files in the files table',
     'aliases' => array('fcp'),
     'options' => array(
       'batch-size' => 'The number of files that should be processed in a single batch job.',
